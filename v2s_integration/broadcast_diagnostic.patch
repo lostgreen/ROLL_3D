@@ -1,0 +1,15 @@
+diff --git a/roll/third_party/fsdp2/model_update.py b/roll/third_party/fsdp2/model_update.py
+--- a/roll/third_party/fsdp2/model_update.py
++++ b/roll/third_party/fsdp2/model_update.py
+@@ -309,6 +309,11 @@ class FSDP2WeightUpdater:
+             )
+             for worker in self._broadcast_workers
+         ]
++        # Surface early receiver RPC errors before the sender blocks in NCCL.
++        # Successful receiver calls remain pending until broadcast completes.
++        ready, _ = ray.wait(refs, num_returns=len(refs), timeout=2.0)
++        for ref in ready:
++            ray.get(ref)
+         handles = []
+         # Keep references to tensors moved to device to prevent premature deallocation
+         device_tensors = []

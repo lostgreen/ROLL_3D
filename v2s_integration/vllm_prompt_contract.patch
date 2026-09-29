@@ -1,0 +1,13 @@
+diff --git a/roll/distributed/strategy/vllm_strategy.py b/roll/distributed/strategy/vllm_strategy.py
+--- a/roll/distributed/strategy/vllm_strategy.py
++++ b/roll/distributed/strategy/vllm_strategy.py
+@@ -331,2 +331,8 @@
+-        output_token_ids, finish_reasons, logprobs = [], [], []
++        expected_prompt = payload.get("multi_modal_data", {}).get("_v2s_expected_prompt_ids")
++        if expected_prompt is not None:
++            assert output is not None and list(output.prompt_token_ids) == expected_prompt, (
++                "V2S contract: vLLM expanded prompt differs from training prompt"
++            )
++
++        output_token_ids, finish_reasons, logprobs = [], [], []
+         for completion_output in output.outputs:

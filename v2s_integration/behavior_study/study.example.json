@@ -1,0 +1,32 @@
+{
+  "repo": "/absolute/path/to/ROLL_3D",
+  "python": "/absolute/path/to/policy-venv/bin/python",
+  "expected_host": "your-b300-host-fqdn",
+  "model": "/absolute/path/to/model",
+  "cuda_libraries": "/absolute/path/to/site-packages/nvidia",
+  "blender_bin": "/absolute/path/to/blender",
+  "source_task": "/absolute/path/to/source_task.json",
+  "asset_index": "/absolute/path/to/asset_index.json",
+  "context": 131072,
+  "output_tokens": 8192,
+  "steps": 40,
+  "episodes": 8,
+  "seed_start": 42,
+  "memory_utilization": 0.75,
+  "allow_background_load": false,
+  "episode_wall_seconds": 28800,
+  "group_wall_seconds": 259200,
+  "probe_timeout": 7200,
+  "preflight_timeout": 7200,
+  "generation": {
+    "python": "/absolute/path/to/hunyuan-venv/bin/python",
+    "model_path": "/absolute/path/to/Hunyuan3D-2.1-model",
+    "subfolder": "hunyuan3d-dit-v2-1",
+    "device": "cuda:0",
+    "gpu": 4,
+    "timeout": 3600,
+    "code_path": "/absolute/path/to/Hunyuan3D-2.1",
+    "lock_path": "/absolute/path/to/runtime/hunyuan.lock",
+    "rembg_path": "/absolute/path/to/rembg-models"
+  }
+}

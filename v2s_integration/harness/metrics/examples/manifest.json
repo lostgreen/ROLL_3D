@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "protocol": {"units": "m", "alignment": "none", "render_config_id": "fixed-eval-v1"},
+  "views": [
+    {"id": "input-01", "split": "observed", "camera_id": "camera-01", "prediction": "pred/input-01.png", "reference": "gt/input-01.png"},
+    {"id": "test-01", "split": "hidden", "camera_id": "camera-02", "prediction": "pred/test-01.png", "reference": "gt/test-01.png"}
+  ],
+  "geometry": {"prediction": "pred/surface.npy", "reference": "gt/surface.npy"},
+  "instances": {
+    "prediction": [{"id": "pred-chair", "category": "chair", "path": "pred/chair.npy"}],
+    "reference": [{"id": "gt-chair", "category": "chair", "path": "gt/chair.npy"}]
+  }
+}

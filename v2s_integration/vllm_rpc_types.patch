@@ -1,0 +1,13 @@
+diff --git a/roll/distributed/strategy/vllm_strategy.py b/roll/distributed/strategy/vllm_strategy.py
+--- a/roll/distributed/strategy/vllm_strategy.py
++++ b/roll/distributed/strategy/vllm_strategy.py
+@@ -384,6 +384,10 @@ class VllmStrategy(InferenceStrategy):
+ 
+     async def broadcast_parameter(self, names, dtypes, shapes, group_name, is_lora=False):
++        # vLLM V1 msgpack RPC does not serialize torch.dtype / torch.Size.
++        # Worker.broadcast_parameter already resolves dtype strings via getattr(torch, ...).
++        dtypes = [str(dtype).removeprefix("torch.") for dtype in dtypes]
++        shapes = [list(shape) for shape in shapes]
+         await self.model.broadcast_parameter(names, dtypes, shapes, group_name, is_lora)
+ 
+     async def update_parameter_in_bucket(self, serialized_named_tensors, is_lora=False):

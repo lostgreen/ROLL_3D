@@ -1,0 +1,13 @@
+{
+  "id": "scene_reconstruction_pilot",
+  "group": "blender",
+  "blender_bin": "/absolute/path/to/blender",
+  "initial_blend": "/absolute/path/to/public_camera_and_lights.blend",
+  "observation_camera": "PublicCamera",
+  "references": [
+    {"id": "ref:0", "image": "/absolute/path/to/public_reference.png", "timestamp": 0}
+  ],
+  "image_size": 640,
+  "budget": {"max_wall_seconds": 3600},
+  "asset_index": "/absolute/path/to/frozen_asset_index.json"
+}

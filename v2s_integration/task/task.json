@@ -1,0 +1,8 @@
+{
+  "id": "material_edit_smoke",
+  "initial_blend": "/home/xuboshen/zgw/ROLL/v2s_integration/task/initial.blend",
+  "reference_image": "/home/xuboshen/zgw/ROLL/v2s_integration/task/reference.png",
+  "prompt": "Edit the existing Cube and Sphere materials to match the reference image. Keep geometry, positions, camera, lighting and floor unchanged. Use bpy material nodes and inspect the rendered feedback. Finish when satisfied.",
+  "reward_version": "diagnostic_observed_rgb_mse_v1",
+  "split": "train_smoke_only"
+}

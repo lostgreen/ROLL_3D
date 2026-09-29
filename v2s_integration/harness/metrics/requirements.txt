@@ -1,0 +1,7 @@
+numpy>=1.26
+scipy>=1.11
+Pillow>=10.0
+scikit-image>=0.22
+# Optional mesh input: trimesh>=4.0
+# Optional perceptual metric: torch>=2.1, torchvision>=0.16, lpips>=0.1.4
+# Tests: pytest>=7

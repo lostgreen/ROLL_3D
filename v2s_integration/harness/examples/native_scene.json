@@ -1,0 +1,17 @@
+{
+  "id": "native_two_objects",
+  "task_type": "example",
+  "system_prompt": "You control Blender through tools. Build the requested scene and inspect the result.",
+  "prompt": "Create a red cube on the ground and a blue sphere beside it. Render a view to check both objects, then finish.",
+  "setup_code": "import bpy\nbpy.ops.object.select_all(action=\"SELECT\")\nbpy.ops.object.delete(use_global=False)",
+  "allowed_tools": [
+    "get_scene_info",
+    "execute_blender_code",
+    "render_scene_view"
+  ],
+  "budget": {
+    "max_agent_steps": 10,
+    "max_tool_calls": 20,
+    "max_wall_seconds": 300
+  }
+}
