@@ -1,0 +1,76 @@
+{
+  "attempt": "native_v9",
+  "source_audit": {
+    "checked": 74,
+    "changed_count": 0,
+    "changed": []
+  },
+  "pipeline": {
+    "state": "complete",
+    "seconds": 276.1466257572174
+  },
+  "episodes": {
+    "count": 4,
+    "reward_min": 0.615980028493624,
+    "reward_max": 0.615980028493624,
+    "contracts_pass": 4,
+    "tool_executions": 0,
+    "errors": 12,
+    "items": [
+      {
+        "id": "material_edit_smoke_1741545029_34f6710523",
+        "reward": 0.615980028493624,
+        "steps": 3,
+        "errors": 3,
+        "tool_executions": 0,
+        "contract_pass": true
+      },
+      {
+        "id": "material_edit_smoke_1741545029_c44f9413ca",
+        "reward": 0.615980028493624,
+        "steps": 3,
+        "errors": 3,
+        "tool_executions": 0,
+        "contract_pass": true
+      },
+      {
+        "id": "material_edit_smoke_1741545029_383e0228cf",
+        "reward": 0.615980028493624,
+        "steps": 3,
+        "errors": 3,
+        "tool_executions": 0,
+        "contract_pass": true
+      },
+      {
+        "id": "material_edit_smoke_1741545029_0254e7fcc5",
+        "reward": 0.615980028493624,
+        "steps": 3,
+        "errors": 3,
+        "tool_executions": 0,
+        "contract_pass": true
+      }
+    ]
+  },
+  "metrics": {
+    "actor/pg_loss": {
+      "step": 0,
+      "value": 0.0,
+      "finite": true
+    },
+    "actor_train/grad_norm": {
+      "step": 0,
+      "value": 0.0,
+      "finite": true
+    },
+    "system/samples": {
+      "step": 0,
+      "value": 4.0,
+      "finite": true
+    }
+  },
+  "checkpoint": {
+    "files": 0,
+    "bytes": 0
+  },
+  "adapters": []
+}

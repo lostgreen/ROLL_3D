@@ -1,0 +1,27 @@
+{
+  "torch": {
+    "exit_code": 0,
+    "seconds": 2.2,
+    "error": []
+  },
+  "vl_manager": {
+    "exit_code": 0,
+    "seconds": 56.1,
+    "error": []
+  },
+  "pipeline": {
+    "exit_code": 0,
+    "seconds": 14.4,
+    "error": []
+  },
+  "fsdp2": {
+    "exit_code": 0,
+    "seconds": 14.2,
+    "error": []
+  },
+  "hf": {
+    "exit_code": 0,
+    "seconds": 6.2,
+    "error": []
+  }
+}

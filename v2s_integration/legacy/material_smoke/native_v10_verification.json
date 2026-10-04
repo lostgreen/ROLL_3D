@@ -1,0 +1,116 @@
+{
+  "attempt": "native_v10",
+  "source_audit": {
+    "checked": 74,
+    "changed_count": 0,
+    "changed": []
+  },
+  "pipeline": {
+    "state": "complete",
+    "seconds": 350.74694085121155
+  },
+  "episodes": {
+    "count": 8,
+    "reward_min": 0.2427614592193243,
+    "reward_max": 0.948433603561494,
+    "contracts_pass": 8,
+    "tool_executions": 10,
+    "errors": 1,
+    "items": [
+      {
+        "id": "material_edit_smoke_1002031045_fd5d9c6e1b",
+        "reward": 0.615980028493624,
+        "steps": 2,
+        "errors": 1,
+        "tool_executions": 1,
+        "contract_pass": true
+      },
+      {
+        "id": "material_edit_smoke_1002031045_738f81d80b",
+        "reward": 0.8004292365807706,
+        "steps": 2,
+        "errors": 0,
+        "tool_executions": 1,
+        "contract_pass": true
+      },
+      {
+        "id": "material_edit_smoke_1002031046_cb1bc7deb1",
+        "reward": 0.5977743477380159,
+        "steps": 2,
+        "errors": 0,
+        "tool_executions": 1,
+        "contract_pass": true
+      },
+      {
+        "id": "material_edit_smoke_1002031045_7978c2b78c",
+        "reward": 0.6717595843587171,
+        "steps": 2,
+        "errors": 0,
+        "tool_executions": 1,
+        "contract_pass": true
+      },
+      {
+        "id": "material_edit_smoke_1002031045_4f253cdf6b",
+        "reward": 0.2427614592193243,
+        "steps": 3,
+        "errors": 0,
+        "tool_executions": 3,
+        "contract_pass": true
+      },
+      {
+        "id": "material_edit_smoke_1002031046_6b9755bf08",
+        "reward": 0.948433603561494,
+        "steps": 2,
+        "errors": 0,
+        "tool_executions": 1,
+        "contract_pass": true
+      },
+      {
+        "id": "material_edit_smoke_1002031046_2af61d2f2d",
+        "reward": 0.8144096635189264,
+        "steps": 2,
+        "errors": 0,
+        "tool_executions": 1,
+        "contract_pass": true
+      },
+      {
+        "id": "material_edit_smoke_1002031046_beb9397249",
+        "reward": 0.828693190930977,
+        "steps": 2,
+        "errors": 0,
+        "tool_executions": 1,
+        "contract_pass": true
+      }
+    ]
+  },
+  "metrics": {
+    "actor/pg_loss": {
+      "step": 1,
+      "value": -1.4901161193847656e-08,
+      "finite": true
+    },
+    "actor_train/grad_norm": {
+      "step": 1,
+      "value": 0.12165915966033936,
+      "finite": true
+    },
+    "system/samples": {
+      "step": 1,
+      "value": 8.0,
+      "finite": true
+    }
+  },
+  "checkpoint": {
+    "files": 24,
+    "bytes": 19143872981
+  },
+  "adapters": [
+    {
+      "path": "/home/xuboshen/zgw/ROLL/v2s_integration/native_run/actor_train-0-G0/checkpoint-1/adapter_model.safetensors",
+      "lora_B_tensors": 56,
+      "lora_B_nonzero": 56,
+      "lora_B_all_finite": true,
+      "lora_B_max_abs": 2.001333996304311e-05
+    }
+  ]
+}

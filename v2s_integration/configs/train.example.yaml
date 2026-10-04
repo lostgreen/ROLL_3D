@@ -1,0 +1,77 @@
+# Overlay on ROLL's visual agentic example. Set actual task/model/reward paths.
+task:
+  task_manifest: /absolute/path/to/reconstruction_task.json
+  output_root: ./artifacts/v2s/train_example/episodes
+  reward_function: your_project.rewards:scene_quality
+  training_target: reasoning_and_action
+  max_steps: 40
+  max_output_tokens: 1024
+  max_images: 16
+
+exp_name: v2s_reconstruction
+seed: 42
+pretrain: /absolute/path/to/model
+reward_pretrain: /absolute/path/to/model
+output_dir: ./artifacts/v2s/train_example
+logging_dir: ./artifacts/v2s/train_example/logs
+render_save_dir: null
+track_with: tensorboard
+tracker_kwargs:
+  log_dir: ./artifacts/v2s/train_example/tensorboard
+checkpoint_config:
+  type: file_system
+  output_dir: ./artifacts/v2s/train_example/checkpoints
+system_envs:
+  PYTHONDONTWRITEBYTECODE: '1'
+  ROLL_OTEL_ENABLED: '0'
+num_gpus_per_node: 8
+max_steps: 10
+save_steps: 5
+eval_steps: 0
+rollout_batch_size: 4
+val_batch_size: 1
+sequence_length: 32768
+adv_estimator: step_reinforce
+enable_reference: false
+init_kl_coef: 0.0
+reward_normalization:
+  grouping: traj_group_id
+  method: identity
+train_env_manager:
+  max_env_num_per_worker: 1
+  group_size: 4
+  format_penalty: 0.0
+val_env_manager:
+  max_env_num_per_worker: 1
+  group_size: 1
+actor_train:
+  device_mapping: '[0, 1, 2, 3]'
+  model_args:
+    attn_implementation: sdpa
+    lora_target: q_proj,v_proj
+    lora_rank: 8
+    lora_alpha: 16
+  training_args:
+    per_device_train_batch_size: 1
+    gradient_accumulation_steps: 1
+    warmup_steps: 0
+  strategy_args:
+    strategy_name: fsdp2_train
+    strategy_config:
+      fsdp_size: 4
+actor_infer:
+  device_mapping: '[4, 5, 6, 7]'
+  model_args:
+    lora_target: q_proj,v_proj
+    lora_rank: 8
+    lora_alpha: 16
+  strategy_args:
+    strategy_name: vllm
+    strategy_config:
+      tensor_parallel_size: 4
+      enable_prefix_caching: false
+      gpu_memory_utilization: 0.65
+reference:
+  device_mapping: '[0, 1, 2, 3]'
+  model_args:
+    attn_implementation: sdpa
