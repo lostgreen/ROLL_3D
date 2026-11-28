@@ -32,6 +32,17 @@ def test_gpu_mapping_refuses_ambiguous_parent_mask():
             validate_gpu_visibility({'CUDA_VISIBLE_DEVICES': mask})
 
 
+def test_two_gpu_collection_keeps_physical_mapping():
+    validate_args(args(num_gpus=2, gpu=1))
+    validate_gpu_visibility({}, num_gpus=2)
+    validate_gpu_visibility({'CUDA_VISIBLE_DEVICES': '0,1'}, num_gpus=2)
+    with pytest.raises(ValueError):
+        validate_args(args(num_gpus=2, gpu=2))
+    for mask in ('1', '1,0', '0,1,2,3,4,5,6,7'):
+        with pytest.raises(ValueError):
+            validate_gpu_visibility({'CUDA_VISIBLE_DEVICES': mask}, num_gpus=2)
+
+
 def test_seed_pairing_reaches_native_proxy_and_is_recorded(tmp_path):
     calls = []
     delegate = SimpleNamespace(generate=lambda **kw: calls.append(kw) or 'response')

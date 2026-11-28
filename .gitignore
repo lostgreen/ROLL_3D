@@ -231,3 +231,6 @@ tutorial/
 /assets/
 /docs_roll/static/img/
 /mcore_adapter/examples/data/
+
+# Weekly reports, dashboard exports and representative experiment media stay local.
+/weekly_report/

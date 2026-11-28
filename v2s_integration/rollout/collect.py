@@ -16,8 +16,11 @@ def write_json(path, value):
 
 
 def validate_args(args):
-    if not 0 <= args.gpu < 8:
-        raise ValueError('--gpu must be a physical device index in [0, 7]')
+    num_gpus = getattr(args, 'num_gpus', 8)
+    if not isinstance(num_gpus, int) or not 1 <= num_gpus <= 8:
+        raise ValueError('--num-gpus must be an integer in [1, 8]')
+    if not 0 <= args.gpu < num_gpus:
+        raise ValueError('--gpu must be a physical device index below --num-gpus')
     if not 1 <= args.steps <= 40:
         raise ValueError('--steps must be in [1, 40]')
     if args.context <= args.output_tokens or min(args.output_tokens, args.episodes, args.max_images) < 1:
@@ -28,12 +31,13 @@ def validate_args(args):
         raise ValueError('--seed-start must be nonnegative')
 
 
-def validate_gpu_visibility(environ):
+def validate_gpu_visibility(environ, num_gpus=8):
     # ROLL Cluster sets worker CUDA_VISIBLE_DEVICES using physical device_mapping
     # ranks. A masked parent would otherwise make Ray and ROLL disagree on IDs.
     visible = environ.get('CUDA_VISIBLE_DEVICES')
-    if visible is not None and visible.replace(' ', '') != '0,1,2,3,4,5,6,7':
-        raise ValueError('Launch with all 8 B300 GPUs visible; --gpu selects the physical inference device')
+    expected = ','.join(str(i) for i in range(num_gpus))
+    if visible is not None and visible.replace(' ', '') != expected:
+        raise ValueError('Launch with all configured GPUs visible; --gpu selects the physical inference device')
 
 
 def episode_status(result):
@@ -46,8 +50,9 @@ def episode_status(result):
 
 
 def run(args):
+    run_started = time.monotonic()
     validate_args(args)
-    validate_gpu_visibility(os.environ)
+    validate_gpu_visibility(os.environ, args.num_gpus)
     import ray
     from dacite import from_dict
     from omegaconf import OmegaConf
@@ -83,7 +88,7 @@ def run(args):
     cfg.track_with = 'tensorboard'
     cfg.tracker_kwargs = {'log_dir': str(out / 'tensorboard')}
     cfg.checkpoint_config = {'type': 'file_system', 'output_dir': str(out / 'unused_checkpoints')}
-    cfg.num_gpus_per_node = 8
+    cfg.num_gpus_per_node = args.num_gpus
     cfg.max_steps = 1
     cfg.sequence_length = args.context
     cfg.rollout_batch_size = 1
@@ -92,11 +97,12 @@ def run(args):
         'PYTHONPATH', 'LD_LIBRARY_PATH', 'HF_HUB_OFFLINE', 'TRANSFORMERS_OFFLINE',
         'PYTHONDONTWRITEBYTECODE', 'ROLL_OTEL_ENABLED', 'V2S_VLLM_PORT_START') if key in os.environ}
     # Train/reference configs satisfy dataclass validation only; no such workers are created.
-    cfg.actor_train.device_mapping = str([(args.gpu + 1) % 8])
+    cfg.actor_train.device_mapping = str([(args.gpu + 1) % args.num_gpus])
     cfg.actor_train.model_args.attn_implementation = 'sdpa'
     cfg.actor_train.strategy_args = {'strategy_name': 'fsdp2_train', 'strategy_config': {'fsdp_size': 1}}
-    cfg.reference.device_mapping = str([(args.gpu + 1) % 8])
+    cfg.reference.device_mapping = str([(args.gpu + 1) % args.num_gpus])
     cfg.actor_infer.device_mapping = str([args.gpu])
+    cfg.actor_infer.model_args.attn_implementation = 'sdpa'
     cfg.actor_infer.backend_timeout = 3
     cfg.actor_infer.generating_args.max_new_tokens = args.output_tokens
     cfg.actor_infer.generating_args.temperature = 0.7
@@ -104,6 +110,7 @@ def run(args):
     cfg.actor_infer.generating_args.top_k = -1
     cfg.actor_infer.strategy_args = {'strategy_name': 'vllm', 'strategy_config': {
         'load_format': 'auto', 'gpu_memory_utilization': args.memory_utilization, 'enforce_eager': True,
+        'enable_sleep_mode': False,
         'max_model_len': args.context, 'enable_prefix_caching': False,
         'max_num_seqs': 1, 'limit_mm_per_prompt': {'image': args.max_images}}}
     template = environment_config(args.task, out / 'episodes', max_steps=args.steps,
@@ -115,10 +122,8 @@ def run(args):
     cfg.val_env_manager = env_manager_cfg
     OmegaConf.save(cfg, out / 'config.yaml')
     config = from_dict(AgenticConfig, OmegaConf.to_container(cfg, resolve=True))
-    if config.num_gpus_per_node != 8:
-        raise RuntimeError('This collector requires the validated 8-GPU B300 host')
     config.set_max_steps(max_steps=1)
-    ray.init(address='local', num_cpus=16, num_gpus=8, namespace=RAY_NAMESPACE,
+    ray.init(address='local', num_cpus=16, num_gpus=args.num_gpus, namespace=RAY_NAMESPACE,
              include_dashboard=False, object_store_memory=2 * 1024**3,
              _temp_dir=f'/tmp/v2s_demo_ray_{os.getpid()}', runtime_env={'env_vars': config.system_envs})
     manager = None
@@ -126,17 +131,18 @@ def run(args):
     started = time.monotonic()
     try:
         for _ in range(30):
-            if any(n['Resources'].get('GPU', 0) >= 8 for n in ray.nodes()):
+            if any(n['Resources'].get('GPU', 0) >= args.num_gpus for n in ray.nodes()):
                 break
             time.sleep(1)
-        resource = ResourceManager(num_nodes=1, num_gpus_per_node=8)
+        resource = ResourceManager(num_nodes=1, num_gpus_per_node=args.num_gpus)
         init_transfer_backend(config.transfer_backend)
         status('loading_model')
         actor = Cluster(name=config.actor_infer.name, worker_cls=config.actor_infer.worker_cls,
                         resource_manager=resource, worker_config=config.actor_infer)
         actor.initialize(pipeline_config=config, blocking=True)
+        model_init_seconds = time.monotonic() - started
         router = ray.remote(RouterManager).options(max_concurrency=4).remote(
-            actor_cluster=actor, router_args=config.router_args, num_gpus_per_node=8)
+            actor_cluster=actor, router_args=config.router_args, num_gpus_per_node=args.num_gpus)
         ray.get(router.initialize.remote())
         tokenizer = default_tokenizer_provider(config.actor_infer.model_args, args.model)
         processor = default_processor_provider(config.actor_infer.model_args, args.model)
@@ -154,6 +160,7 @@ def run(args):
                        'note': 'Paired seeds do not guarantee identical outputs across different tool prompts'}
         write_json(out / 'collection_config.json', {
             'task': str(Path(args.task).resolve()), 'gpu': args.gpu,
+            'num_gpus': args.num_gpus, 'backend': 'vllm',
             'context_tokens': args.context, 'output_tokens': args.output_tokens,
             'max_steps': args.steps, 'episodes': args.episodes,
             'environment_seeds': list(range(args.seed_start, args.seed_start + args.episodes)),
@@ -182,8 +189,17 @@ def run(args):
                     if output.batch is None:
                         manager.env.finish_episode('generation_aborted')
                         break
+                    if args.save_decisions:
+                        import torch
+                        torch.save({'batch': {key: value.detach().cpu() for key, value in output.batch.items()},
+                                    'non_tensor_batch': output.non_tensor_batch,
+                                    'meta_info': output.meta_info},
+                                   manager.request_dir / 'decision.pt')
                     phase = 'environment_step'
+                    step_started = time.monotonic()
                     cache = manager.step(output)
+                    write_json(manager.request_dir / 'execution_timing.json', {
+                        'environment_step_seconds': time.monotonic() - step_started})
                 item.update(json.loads((manager.env.episode / 'result.json').read_text()))
                 item['status'] = episode_status(item)
                 if item['status'] == 'failed':
@@ -217,6 +233,7 @@ def run(args):
         failures = sum(item['status'] == 'failed' for item in outcomes)
         limited = sum(item['status'] == 'limited' for item in outcomes)
         status('complete_with_failures' if failures else 'complete', seconds=time.monotonic() - started,
+               process_seconds=time.monotonic() - run_started, model_init_seconds=model_init_seconds,
                outcomes=outcomes, failed_episodes=failures, limited_episodes=limited)
         if failures:
             raise RuntimeError(f'{failures} episodes failed; see outcomes.json')
@@ -239,6 +256,9 @@ if __name__ == '__main__':
     parser.add_argument('--output', required=True)
     parser.add_argument('--model', required=True)
     parser.add_argument('--gpu', type=int, default=0)
+    parser.add_argument('--num-gpus', type=int, default=8)
+    parser.add_argument('--save-decisions', action='store_true',
+                        help='Save native decision tensors and visual inputs for supervised diagnostics')
     parser.add_argument('--seed-start', type=int, default=42)
     parser.add_argument('--memory-utilization', type=float, default=0.65)
     parser.add_argument('--max-images', type=int, default=8)

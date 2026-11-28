@@ -13,6 +13,9 @@ from PIL import Image
 
 from v2s_integration.runtime.session import (VENDOR, SCOPES, create_session, execute_validated, model_tools)
 from v2s_integration.agent.actions import parse_action
+from v2s_integration.agent.context_policy import (
+    apply_context_profile, context_profile_sha256, load_context_profile,
+)
 from v2s_integration.evaluation.rewards import load_reward, evaluate_reward
 from environment.budget import BudgetExceeded
 from tools.base import ToolResult
@@ -34,10 +37,16 @@ def blender_json(text):
 
 class ReconstructionEnv:
     def __init__(self, task_manifest, output_root, max_steps=40, max_output_tokens=8192,
-                 reward_function=None, training=False, training_target='reasoning_and_action', **kwargs):
+                 reward_function=None, training=False, training_target='reasoning_and_action',
+                 context_profile=None, **kwargs):
         self.task = json.loads(Path(task_manifest).read_text())
         if self.task.get('group') not in SCOPES:
             raise ValueError('Manifest must select blender, hunyuan, assets, or mixed')
+        self.context_profile = load_context_profile(context_profile)
+        self.context_profile_sha256 = context_profile_sha256(self.context_profile) if self.context_profile else None
+        self.allow_camera_light_edits = bool(self.context_profile and self.context_profile['allow_camera_light_edits'])
+        self.profile_tool_names = ({t['function']['name'] for t in self.context_profile['tools']}
+                                   if self.context_profile else None)
         if not isinstance(max_steps, int) or not 1 <= max_steps <= 40:
             raise ValueError('max_steps must be in [1, 40]')
         if not isinstance(max_output_tokens, int) or max_output_tokens <= 0:
@@ -108,6 +117,24 @@ class ReconstructionEnv:
         return blender_json(result.text)
 
     def _render(self):
+        if self.context_profile is not None:
+            # Match the teacher PilotEnv observation protocol. This path is
+            # selected only by the validated explicit Raw-CoT context profile.
+            path = self.episode / ('public_observation_%03d.png' % self.step_count)
+            self._code('import bpy\ns=bpy.context.scene\n'
+                'if s.camera is None: s.camera=next((o for o in s.objects if o.type=="CAMERA"),None)\n'
+                's.render.engine="CYCLES"; s.cycles.device="CPU"; s.cycles.samples=12\n'
+                's.cycles.use_denoising=True; s.cycles.seed=20261120\n'
+                's.render.threads_mode="FIXED"; s.render.threads=4\n'
+                's.render.resolution_x=640; s.render.resolution_y=480; s.render.resolution_percentage=100\n'
+                's.render.image_settings.file_format="PNG"; s.render.image_settings.color_mode="RGB"\n'
+                's.render.filepath=' + repr(str(path)) + '\n'
+                'bpy.ops.render.render(write_still=True)\n')
+            with Image.open(path) as image:
+                if image.size != (640, 480):
+                    raise RuntimeError('Raw-CoT observation must be 640x480')
+            label = 'Initial scene S0' if self.step_count == 0 else 'Actual current scene at decision %s' % self.step_count
+            return [self._save_image({'data': base64.b64encode(path.read_bytes()).decode()}, label)]
         result = ToolResult.from_legacy(self.mcp.call_tool_rich('render_scene_view', {
             'view': 'camera', 'camera': self.task['observation_camera'],
             'lighting': 'scene', 'max_size': self.task.get('image_size', 640)}))
@@ -178,6 +205,12 @@ class ReconstructionEnv:
             self.task_prompt = (PROMPTS / 'task.txt').read_text().format(
                 reference_frame_labels_and_timestamps='; '.join(r['label'] for r in self.reference_refs),
                 public_scene_state=public)
+            if self.task.get('instruction'):
+                self.task_prompt += '\nTask-specific instruction:\n' + str(self.task['instruction'])
+            if self.task.get('public_camera_protocol'):
+                self.task_prompt += '\nPublic camera protocol:\n' + json.dumps(
+                    self.task['public_camera_protocol'], ensure_ascii=False)
+            apply_context_profile(self)
             dump(self.episode / 'environment.json', self.session.snapshot())
             dump(self.episode / 'tool_schemas.json', self.model_tools)
             dump(self.episode / 'manifest.json', {
@@ -185,7 +218,8 @@ class ReconstructionEnv:
                 'budget': self.task['budget'], 'max_output_tokens': self.max_output_tokens,
                 'references': self.reference_refs, 'tool_contract_hash': self.session.registry.contract_hash(),
                 'system_prompt': self.system_prompt, 'task_prompt': self.task_prompt,
-                'prompt_version': 'native-tools-no-budget-v2',
+                'prompt_version': self.context_profile['policy_version'] if self.context_profile else 'native-tools-no-budget-v2',
+                'context_profile': self.context_profile, 'context_profile_sha256': self.context_profile_sha256,
                 'prompt_files_sha256': {name: hashlib.sha256((PROMPTS / name).read_bytes()).hexdigest()
                                         for name in ('system.txt', 'task.txt')},
                 'evaluation_feedback': False, 'training': self.training,
@@ -218,6 +252,8 @@ class ReconstructionEnv:
             self.session.budget.begin_step()
             raw = str(action).strip().removesuffix('<|im_end|>').removesuffix('<|endoftext|>').strip()
             call = parse_action(raw, self.step_count, self.session.registry)
+            if self.profile_tool_names is not None and call.name not in self.profile_tool_names:
+                raise ValueError('Tool not allowed by the active context profile: ' + call.name)
             result, log = execute_validated(self.session, call.name, call.arguments)
         except ValueError as exc:
             result = ToolResult(str(exc), status='rejected', error_type='invalid_action')
@@ -227,7 +263,7 @@ class ReconstructionEnv:
         # Code can partially mutate the scene even when execution reports failure.
         try:
             self.public_state = self._scene()
-            if self._protected_state() != self.protected_state:
+            if not self.allow_camera_light_edits and self._protected_state() != self.protected_state:
                 terminal_reason = 'environment_contract_violation'
             elif call and call.name in MUTATING:
                 self.current_images = self._render()

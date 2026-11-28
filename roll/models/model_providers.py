@@ -678,7 +678,7 @@ def get_extra_data_provider(model_name_or_path: str, processor=None):
             raise e
 
     # NOTE:
-    if isinstance(model_type, str) and (("qwen2" in model_type) or (model_type in ("qwen3_vl", "qwen3_vl_moe"))):
+    if isinstance(model_type, str) and (("qwen2" in model_type) or (model_type in ("qwen3_vl", "qwen3_vl_moe", "qwen3_5"))):
         import types
 
         from transformers import BatchFeature  # help define a object to accesss attr
@@ -739,6 +739,10 @@ def get_extra_data_provider(model_name_or_path: str, processor=None):
                 from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import Qwen2_5_VLForConditionalGeneration
 
                 get_rope_index = types.MethodType(Qwen2_5_VLForConditionalGeneration.get_rope_index, dummy_self)
+        elif model_type == "qwen3_5":
+            from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5Model
+
+            get_rope_index = types.MethodType(Qwen3_5Model.get_rope_index, dummy_self)
         elif model_type in ("qwen3_vl", "qwen3_vl_moe"):
             from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLModel
 

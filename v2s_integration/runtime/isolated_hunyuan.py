@@ -77,7 +77,7 @@ class IsolatedHunyuanBackend:
 
 
 def worker(folder):
-    from . import runtime  # Resolve the frozen harness modules in the child.
+    from . import session  # Install frozen vendor paths in the isolated child.
     from tools.hunyuan import HunyuanLocalBackend
     folder = Path(folder)
     cfg = json.loads((folder / 'config.json').read_text())

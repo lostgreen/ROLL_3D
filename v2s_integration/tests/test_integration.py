@@ -206,6 +206,21 @@ class Tokenizer:
         return json.dumps({'messages': messages, 'tools': kwargs['tools']})
 
 
+def test_public_task_context_excludes_private_gt(setup, monkeypatch):
+    task, _, _ = setup
+    task['instruction'] = 'Use approximate furniture candidates.'
+    task['public_camera_protocol'] = {'projection': 'orthographic', 'cameras': [{'name': 'PublicCamera', 'ortho_scale': 4}]}
+    task['private_gt'] = '/hidden/answer.blend'
+    env = make_env(setup, monkeypatch)
+    try:
+        prompt, _, _, _, _ = render_request(Tokenizer(), env)
+        assert task['instruction'] in prompt
+        assert 'ortho_scale' in prompt
+        assert task['private_gt'] not in prompt
+    finally:
+        env.close()
+
+
 def test_multiturn_crop_images_and_finish(setup, monkeypatch):
     env = make_env(setup, monkeypatch)
     try:
@@ -248,18 +263,17 @@ def test_error_retry_budget_and_reasoning_not_executed(setup, monkeypatch):
         env.close()
 
 
-def test_history_pruning_keeps_call_result_pairs(setup, monkeypatch):
+def test_baseline_rejects_history_pruning(setup, monkeypatch):
     env = make_env(setup, monkeypatch)
     try:
         for _ in range(3):
             env.step(action('scene.list_objects', {}))
-        _, messages, _, _, state = render_request(Tokenizer(), env, history_limit=1)
-        assert sum(m['role'] == 'tool' for m in messages) == 1
-        assert sum(bool(m.get('tool_calls')) for m in messages) == 1
-        assert state['omitted_history_turns'] == 2
-        _, messages, _, _, _ = render_request(Tokenizer(), env, history_limit=0)
-        assert not any(m['role'] == 'tool' for m in messages)
-        assert 'public_scene_state' in str(messages)
+        for limit in (0, 1):
+            with pytest.raises(ValueError, match='complete tool history'):
+                render_request(Tokenizer(), env, history_limit=limit)
+        _, messages, _, _, state = render_request(Tokenizer(), env)
+        assert sum(m['role'] == 'tool' for m in messages) == 3
+        assert state['omitted_history_turns'] == 0
     finally:
         env.close()
 
@@ -351,15 +365,18 @@ def test_roll_manager_collates_images_and_reserves_output(setup, monkeypatch, ma
         manager.env, manager.tokenizer, manager.collator = env, Tokenizer(), Collator()
         manager.env_config = {'max_tokens_per_step': 8192}
         manager.worker_config = SimpleNamespace(generating_args=SimpleNamespace(max_new_tokens=8192))
-        manager.pipeline_config = SimpleNamespace(sequence_length=8392)
+        manager.pipeline_config = SimpleNamespace(sequence_length=9000)
         data, messages = manager.format_messages(None)
-        assert data.batch['input_ids'].shape[1] == 100
-        assert not any(m['role'] == 'tool' for m in messages)
+        assert data.batch['input_ids'].shape[1] == 400
+        assert sum(m['role'] == 'tool' for m in messages) == 1
         manifest = json.loads((manager.request_dir / 'input_manifest.json').read_text())
-        assert manifest['state']['omitted_history_turns'] == 1
+        assert manifest['state']['omitted_history_turns'] == 0
         assert json.loads((manager.request_dir / 'inference_prompt_ids.json').read_text()) == [1, 2, 3]
-        manager.pipeline_config.sequence_length = 8200
+        manager.pipeline_config.sequence_length = 8392
         with pytest.raises(module.ContextBudgetExceeded):
             manager.format_messages(None)
+        budget = json.loads((manager.request_dir / 'context_budget_exceeded.json').read_text())
+        assert budget['prompt_tokens'] == 400
+        assert budget['history_turns'] == 1 and budget['omitted_history_turns'] == 0
     finally:
         env.close()

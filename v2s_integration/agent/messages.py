@@ -1,62 +1,84 @@
-"""Auditable model inputs; keep complete tool-call/result pairs when pruning."""
+"""Auditable model inputs shared by Raw-CoT SFT and the student harness."""
+import copy
 import hashlib
 import json
 import re
 from PIL import Image
+from v2s_integration.agent.context_policy import (
+    INITIAL_DESCRIPTION, V2_POLICY_VERSION, active_context_policy,
+    observation_label, omitted_label, select_observations,
+)
+from v2s_integration.agent.observation_format import (
+    format_observation_messages, format_public_scene_state, observation_contract_sha256,
+)
 
 
 def build_messages(env, history_limit=None):
-    if history_limit is None:
-        history_limit = len(env.turns)
-    turns = env.turns[-history_limit:] if history_limit else []
-    scene_refs = {r['path'] for t in env.turns[-2:] for r in t['scene_images']}
-    if not env.turns:
-        scene_refs.update(r['path'] for r in env.initial_images)
-    active_refs = [r['path'] for t in turns for r in t['tool_images']][-2:]
-    selected = scene_refs | set(active_refs)
+    version = active_context_policy(env)
+    if history_limit is not None and history_limit != len(env.turns):
+        raise ValueError('Raw-CoT context requires complete tool history; history pruning is disabled')
+    turns = env.turns
+    occurrences, sources, selected, policy = select_observations(env)
     pictures, refs = [], []
+    emitted = set()
 
-    def content(text, image_refs, always=False):
+    def append_image(value, ref, label):
+        with Image.open(ref['path']) as source:
+            pictures.append(source.convert('RGB'))
+        refs.append(copy.deepcopy(ref))
+        value.extend([{'type': 'text', 'text': label}, {'type': 'image'}])
+
+    def observation(text, keys):
         value = [{'type': 'text', 'text': text}]
-        for ref in image_refs:
-            if not always and ref['path'] not in selected:
-                continue
-            with Image.open(ref['path']) as source:
-                pictures.append(source.convert('RGB'))
-            refs.append(ref)
-            value.extend([{'type': 'text', 'text': ref['label']}, {'type': 'image'}])
+        for key in keys:
+            identity = occurrences[key]
+            source = sources[identity]
+            if identity in selected and identity not in emitted:
+                ref = dict(source['ref'], generated_step=source['generated_step'],
+                           camera_id=source['camera_id'], scene_version=source['scene_version'],
+                           sha256=source['sha256'], source_kind=source['kind'])
+                append_image(value, ref, observation_label(source))
+                emitted.add(identity)
+            elif identity in emitted:
+                value.append({'type': 'text', 'text': '[同一观察已在历史中保留，不重复附图。image_id=' + identity + ']'})
+            else:
+                value.append({'type': 'text', 'text': omitted_label(source, selected, sources)})
         return value
 
+    initial = getattr(env, 'initial_scene_description', None) or INITIAL_DESCRIPTION
+    references = [{'type': 'text', 'text': env.task_prompt + '\n\n' + initial}]
+    for ref in env.reference_refs:
+        # Public references are semantic slots and must not be deduplicated.
+        append_image(references, ref, ref.get('label', 'Reference'))
     messages = [{'role': 'system', 'content': env.system_prompt},
-                {'role': 'user', 'content': content(env.task_prompt, env.reference_refs, always=True)}]
-    if not env.turns:
-        messages.append({'role': 'user', 'content': content('Initial scene observation', env.initial_images)})
-    for turn in turns:
+                {'role': 'user', 'content': references},
+                {'role': 'user', 'content': observation('Initial scene observation S0',
+                    [('initial', i) for i in range(len(env.initial_images))])}]
+    for index, turn in enumerate(turns):
         call = turn['call']
         # Reasoning text is archived separately; never reinterpret it as an action.
         if call:
             messages.append({'role': 'assistant', 'content': '', 'tool_calls': [{
                 'id': call['id'], 'type': 'function',
-                'function': {'name': call['name'], 'arguments': call['arguments']}}]})
-            feedback = dict(turn['feedback'])
-            feedback['text'] = feedback['text'][:8000]
+                'function': {'name': call['name'], 'arguments': copy.deepcopy(call['arguments'])}}]})
+            feedback = copy.deepcopy(turn['feedback'])
             messages.append({'role': 'tool', 'tool_call_id': call['id'], 'name': call['name'],
                              'content': json.dumps(feedback, ensure_ascii=False)})
         else:
-            messages.append({'role': 'user', 'content': 'Environment notice: ' + turn['feedback']['text'][:2000]})
-        # Repeat the current render only once below; retain actual tool images here.
-        messages.append({'role': 'user', 'content': content(
-            'Environment observation', turn['tool_images'])})
-    state = {'public_scene_state': env.public_state,
-             'omitted_history_turns': len(env.turns) - len(turns)}
-    # Include the preceding distinct scene view once for visual comparison.
-    views = []
-    for turn in env.turns[-2:]:
-        for ref in turn['scene_images']:
-            if ref['path'] not in {v['path'] for v in views}:
-                views.append(ref)
-    if env.turns:
-        messages.append({'role': 'user', 'content': content('Environment notice: ' + json.dumps(state), views)})
+            messages.append({'role': 'user', 'content': 'Environment notice: ' +
+                             json.dumps(turn['feedback'], ensure_ascii=False)})
+        keys = [(index, 'tool', i) for i in range(len(turn.get('tool_images', [])))]
+        keys += [(index, 'scene', i) for i in range(len(turn.get('scene_images', [])))]
+        messages.append({'role': 'user', 'content': observation('Environment observation', keys)})
+    state = {'public_scene_state': copy.deepcopy(env.public_state),
+             'omitted_history_turns': 0, 'context_policy': policy}
+    # The audit manifest is returned/saved, not inserted into model context.
+    messages.append({'role': 'user', 'content': 'Current public scene state: ' +
+                     json.dumps({'public_scene_state': env.public_state}, ensure_ascii=False)})
+    if version == V2_POLICY_VERSION:
+        messages = format_observation_messages(messages)
+        state['public_scene_state'] = format_public_scene_state(env.public_state)
+        state['context_policy']['observation_contract_sha256'] = observation_contract_sha256()
     return messages, pictures, refs, state
 
 

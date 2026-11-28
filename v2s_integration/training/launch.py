@@ -44,9 +44,11 @@ def main():
     root = str(Path(__file__).resolve().parents[2])
     cfg.system_envs.PYTHONPATH = os.pathsep.join([str(Path(args.repo).resolve()), root,
                                                os.environ.get('PYTHONPATH', '')])
-    config = from_dict(AgenticConfig, OmegaConf.to_container(cfg, resolve=True))
-    output = Path(config.output_dir)
+    # AgenticConfig initializes logging below output/logs. Reserve the unique
+    # run directory first, before that initialization creates its parent.
+    output = Path(cfg.output_dir)
     output.mkdir(parents=True, exist_ok=False)
+    config = from_dict(AgenticConfig, OmegaConf.to_container(cfg, resolve=True))
     OmegaConf.save(cfg, output / 'config.yaml')
     (output / 'launch.json').write_text(json.dumps({'pipeline': 'ROLL.AgenticPipeline',
         'manager': cfg.custom_envs.Reconstruction.env_manager_cls, 'training_target': task.training_target,

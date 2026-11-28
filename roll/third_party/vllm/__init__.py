@@ -46,7 +46,7 @@ logger.info(f"Using vllm version {vllm.__version__}")
 
 
 async def create_async_llm(resource_placement_groups: List[Dict], **kwargs):
-    kwargs["enable_sleep_mode"] = True
+    kwargs.setdefault("enable_sleep_mode", True)
     if "attention_config" not in kwargs and "attention_config" in {
         f.name: f for f in dataclasses.fields(AsyncEngineArgs)
     }:  # vllm<=0.12.0 not has attention_config in AsyncEngineArgs

@@ -176,6 +176,8 @@ class RetrievalProvider:
         return {
             "asset_id": self._asset_id(item),
             "name": self._display_name(item),
+            "category": item.get("category", metadata.get("category")),
+            "aliases": item.get("aliases", metadata.get("aliases", [])),
             "source_relative_path": item.get("source_relative_path", metadata.get("source_relative_path")),
             "format": source.suffix.lstrip(".").lower() if source else None,
             "payload_available": bool(source and source.is_file()),
@@ -197,7 +199,7 @@ class RetrievalProvider:
         for item in self.items:
             public = self._public(item)
             fields = [str(public.get(key, "")).lower()
-                      for key in ("asset_id", "name", "source_relative_path", "dimensions", "animation_clips")]
+                      for key in ("asset_id", "name", "category", "aliases", "source_relative_path", "dimensions", "animation_clips")]
             haystack = " ".join(fields)
             # Match token overlap for natural-language queries. Requiring the
             # whole query as a contiguous substring makes useful requests such

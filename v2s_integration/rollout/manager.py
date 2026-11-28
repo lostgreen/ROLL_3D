@@ -70,19 +70,22 @@ class ReconstructionManager(VLTrajEnvManager):
         if self.worker_config.generating_args.max_new_tokens != reserve:
             raise ValueError('Inference worker and environment output budgets disagree')
         # Collate before counting: visual token expansion contributes to the budget.
-        for keep in range(len(self.env.turns), -1, -1):
-            prompt, messages, images, refs, state = render_request(self.tokenizer, self.env, keep)
-            feature = {self.collator.prompt_key: prompt, self.collator.image_key: images}
-            data = DataProto.from_single_dict(self.collator([feature]))
-            if data.batch['input_ids'].shape[1] + reserve <= self.pipeline_config.sequence_length:
-                break
-        else:
-            raise ContextBudgetExceeded('Reference images, state and output reserve do not fit')
+        prompt, messages, images, refs, state = render_request(self.tokenizer, self.env)
+        feature = {self.collator.prompt_key: prompt, self.collator.image_key: images}
+        data = DataProto.from_single_dict(self.collator([feature]))
+        input_tokens = data.batch['input_ids'].shape[1]
         item = data.non_tensor_batch.get('multi_modal_data')
         infer_ids = item[0].get('prompt_token_ids') if item is not None else None
         self.request_dir = self.env.episode / 'requests' / f'{self.env.step_count + 1:03d}'
         record_request(self.request_dir, prompt, messages, self.env.model_tools, refs,
                        data.batch['input_ids'][0].tolist(), infer_ids, state)
+        if input_tokens + reserve > self.pipeline_config.sequence_length:
+            budget = {'error_type': 'context_budget_exceeded', 'prompt_tokens': input_tokens,
+                      'output_reserve': reserve, 'sequence_length': self.pipeline_config.sequence_length,
+                      'history_turns': len(self.env.turns), 'omitted_history_turns': 0}
+            (self.request_dir / 'context_budget_exceeded.json').write_text(json.dumps(budget))
+            self.env.recorder.event('context_budget_exceeded', **budget)
+            raise ContextBudgetExceeded('Complete history, images and output reserve exceed context budget')
         self.env.recorder.event('model.request', event_step=self.env.step_count + 1,
                                 messages=messages, tools=self.env.model_tools,
                                 input_manifest=str(self.request_dir / 'input_manifest.json'))
@@ -111,7 +114,9 @@ class ReconstructionManager(VLTrajEnvManager):
             (self.request_dir / 'generation.json').write_text(json.dumps({
                 'response_ids': output.batch['responses'][0].tolist(),
                 'decision_seconds': time.monotonic() - started,
-                'stop_reason': str(output.meta_info.get('stop_reason'))}))
+                'stop_reason': str(output.meta_info.get('stop_reason')),
+                'backend_finish_reasons': output.meta_info.get('finish_reasons'),
+                'output_token_cap': self.env.max_output_tokens}))
         return output
 
     def step(self, output):
